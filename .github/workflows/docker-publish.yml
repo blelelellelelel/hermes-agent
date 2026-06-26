@@ -47,7 +47,7 @@ jobs:
   build-amd64:
     # Only run on the upstream repository, not on forks
     if: github.repository == 'NousResearch/hermes-agent'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     outputs:
       digest: ${{ steps.push.outputs.digest }}
@@ -61,16 +61,16 @@ jobs:
       # is gated pre-merge by docker-lint + uv-lockfile-check). Every step
       # below is skipped on PRs, so the job still reports green and the
       # required check never hangs.
-      - name: Set up Docker Buildx
         if: github.event_name != 'pull_request'
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
 
       # Build once, load into the local daemon for smoke testing.  Cached
       # to gha with a per-arch scope; the push step below reuses every
       # layer from this build.
       - name: Build image (amd64, smoke test)
         if: github.event_name != 'pull_request'
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: Dockerfile
@@ -79,8 +79,6 @@ jobs:
           tags: ${{ env.IMAGE_NAME }}:test
           build-args: |
             HERMES_GIT_SHA=${{ github.sha }}
-          cache-from: type=gha,scope=docker-amd64
-          cache-to: type=gha,mode=max,scope=docker-amd64
 
       - name: Smoke test image
         if: github.event_name != 'pull_request'
@@ -155,7 +153,7 @@ jobs:
       - name: Push amd64 by digest
         id: push
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release'
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: Dockerfile
@@ -165,8 +163,6 @@ jobs:
           build-args: |
             HERMES_GIT_SHA=${{ github.sha }}
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=docker-amd64
-          cache-to: type=gha,mode=max,scope=docker-amd64
 
       # Write the digest to a file and upload it as an artifact so the
       # merge job can stitch both per-arch digests into a manifest list.
@@ -194,7 +190,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-arm64:
     if: github.repository == 'NousResearch/hermes-agent'
-    runs-on: ubuntu-24.04-arm
+    runs-on: blacksmith-32vcpu-ubuntu-2404-arm
     timeout-minutes: 45
     outputs:
       digest: ${{ steps.push.outputs.digest }}
@@ -203,9 +199,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       # arm64 build runs only on push-to-main and release (see build-amd64).
-      - name: Set up Docker Buildx
         if: github.event_name != 'pull_request'
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
 
       # Log in to ghcr.io so the registry-backed build cache below can be
       # read (cache-from) on every event and written (cache-to) on
@@ -232,7 +228,7 @@ jobs:
       # token failure mode cannot recur.
       - name: Build image (arm64, smoke test, cached publish)
         if: github.event_name != 'pull_request'
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: Dockerfile
@@ -241,8 +237,6 @@ jobs:
           tags: ${{ env.IMAGE_NAME }}:test
           build-args: |
             HERMES_GIT_SHA=${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/nousresearch/hermes-agent:buildcache-arm64
-          cache-to: type=registry,ref=ghcr.io/nousresearch/hermes-agent:buildcache-arm64,mode=max
 
       - name: Smoke test image
         if: github.event_name != 'pull_request'
@@ -260,7 +254,7 @@ jobs:
       - name: Push arm64 by digest
         id: push
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release'
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: Dockerfile
@@ -270,8 +264,6 @@ jobs:
           build-args: |
             HERMES_GIT_SHA=${{ github.sha }}
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=registry,ref=ghcr.io/nousresearch/hermes-agent:buildcache-arm64
-          cache-to: type=registry,ref=ghcr.io/nousresearch/hermes-agent:buildcache-arm64,mode=max
 
       - name: Export digest
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release'
